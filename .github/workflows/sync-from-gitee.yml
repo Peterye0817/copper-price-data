@@ -1,5 +1,7 @@
 # 工作流名称
 name: Sync File from Gitee
+permissions:
+  contents: write
 
 # 工作流触发条件
 on:
