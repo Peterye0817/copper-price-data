@@ -3,7 +3,7 @@ name: Sync Data from Gitee
 on:
   # 每天北京时间凌晨 2 点 (13:00 UTC) 自动执行
   schedule:
-    - cron: '0 18 * * *'
+    - cron: '0 13 * * *'
   # 允许在 Actions 页面手动触发此工作流
   workflow_dispatch:
 
@@ -15,26 +15,36 @@ jobs:
       - name: Checkout GitHub Repo
         uses: actions/checkout@v4
 
-      # 2. 直接从 Gitee 的 raw 链接下载文件
-      - name: Download data file from Gitee
+      # 2. 下载文件，并增加详细的调试信息
+      - name: Download data file from Gitee with Debugging
         run: |
-          # 直接从 Gitee 的 raw URL 下载文件
-          # 注意：这里假设文件在 master 分支，和您截图一致
-          curl -s -L -o "${{ secrets.GITEE_DATA_PATH }}" \
-            "https://gitee.com/${{ secrets.GITEE_REPO }}/raw/master/${{ secrets.GITEE_DATA_PATH }}"
-          
-          # 检查文件是否下载成功（检查文件大小是否大于0）
-          if [ ! -s "${{ secrets.GITEE_DATA_PATH }}" ]; then
-            echo "Error: Failed to download file from Gitee or the file is empty."
-            echo "Please double check your secrets are set correctly:"
-            echo "GITEE_REPO: Peter817/copper_record"
-            echo "GITEE_DATA_PATH: copper_forex_daily.csv"
+          # 遇到错误立即退出，并打印出所有执行的命令
+          set -ex
+
+          # 定义变量，让命令更清晰
+          FILE_PATH="${{ secrets.GITEE_DATA_PATH }}"
+          DOWNLOAD_URL="https://gitee.com/${{ secrets.GITEE_REPO }}/raw/master/${FILE_PATH}"
+
+          echo "--- Debug Info ---"
+          echo "Downloading from URL: ${DOWNLOAD_URL}"
+          echo "Saving to local path: ${FILE_PATH}"
+          echo "------------------"
+
+          # 使用 shell 重定向来写入文件
+          curl -s -L "${DOWNLOAD_URL}" > "${FILE_PATH}"
+
+          echo "Download command finished. Listing current directory contents:"
+          ls -la
+
+          # 再次检查文件是否下载成功且不为空
+          if [ ! -s "${FILE_PATH}" ]; then
+            echo "Error: File was not downloaded correctly or is empty."
             exit 1
           fi
           
           echo "File downloaded successfully."
 
-      # 3. 自动提交和推送文件（如果文件内容有变化）
+      # 3. 自动提交和推送文件
       - name: Commit and push if changed
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
