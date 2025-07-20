@@ -1,55 +1,40 @@
 name: Sync Data from Gitee
 
 on:
+  # 每天北京时间凌晨 2 点 (13:00 UTC) 自动执行
   schedule:
-    # 每天北京时间凌晨 2 点 (18:00 UTC) 自动执行
-    - cron: '0 13 * * *'
+    - cron: '0 18 * * *'
+  # 允许在 Actions 页面手动触发此工作流
   workflow_dispatch:
 
 jobs:
   sync-file:
     runs-on: ubuntu-latest
     steps:
+      # 1. Checkout 当前的 GitHub 仓库
       - name: Checkout GitHub Repo
         uses: actions/checkout@v4
 
+      # 2. 直接从 Gitee 的 raw 链接下载文件
       - name: Download data file from Gitee
         run: |
-          # 准备本地目录
-          mkdir -p $(dirname "${{ secrets.GITEE_DATA_PATH }}")
+          # 直接从 Gitee 的 raw URL 下载文件
+          # 注意：这里假设文件在 master 分支，和您截图一致
+          curl -s -L -o "${{ secrets.GITEE_DATA_PATH }}" \
+            "https://gitee.com/${{ secrets.GITEE_REPO }}/raw/master/${{ secrets.GITEE_DATA_PATH }}"
           
-          # 调用 Gitee API 并将 HTTP 状态码和响应体分开
-          API_RESPONSE=$(curl -s -w "\n%{http_code}" -H "Authorization: token ${{ secrets.GITEE_TOKEN }}" \
-            "https://gitee.com/api/v5/repos/${{ secrets.GITEE_REPO }}/contents/${{ secrets.GITEE_DATA_PATH }}")
-          
-          # 提取响应体和状态码
-          BODY=$(echo "$API_RESPONSE" | sed '$d')
-          HTTP_CODE=$(echo "$API_RESPONSE" | tail -n 1)
-
-          # 打印日志用于调试
-          echo "Gitee API HTTP Status Code: $HTTP_CODE"
-          echo "Gitee API Response Body: $BODY"
-
-          # 检查请求是否成功
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "Error: Gitee API returned status $HTTP_CODE. Please check your GITEE_TOKEN, GITEE_REPO, and GITEE_DATA_PATH secrets."
+          # 检查文件是否下载成功（检查文件大小是否大于0）
+          if [ ! -s "${{ secrets.GITEE_DATA_PATH }}" ]; then
+            echo "Error: Failed to download file from Gitee or the file is empty."
+            echo "Please double check your secrets are set correctly:"
+            echo "GITEE_REPO: Peter817/copper_record"
+            echo "GITEE_DATA_PATH: copper_forex_daily.csv"
             exit 1
           fi
           
-          # 从响应体中提取下载链接
-          DOWNLOAD_URL=$(echo "$BODY" | jq -r '.download_url')
-            
-          # 检查是否成功提取到 URL
-          if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" == "null" ]; then
-            echo "Error: Could not extract 'download_url' from Gitee API response."
-            echo "This usually means the path in your secrets points to a directory, not a file."
-            exit 1
-          fi
-          
-          # 使用获取到的链接下载文件
-          curl -s -L -o "${{ secrets.GITEE_DATA_PATH }}" "$DOWNLOAD_URL"
-          echo "File downloaded successfully to ${{ secrets.GITEE_DATA_PATH }}"
+          echo "File downloaded successfully."
 
+      # 3. 自动提交和推送文件（如果文件内容有变化）
       - name: Commit and push if changed
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
