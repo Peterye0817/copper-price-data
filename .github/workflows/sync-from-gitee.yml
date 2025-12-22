@@ -15,23 +15,24 @@ jobs:
       - name: Checkout GitHub Repo
         uses: actions/checkout@v4
 
-      # 使用 Gitee 的 Raw 下载链接，直接把 Token 挂在参数后面
-      # 这种方式不走 API 节点，不容易被拦截，也不会有 JSON 解析错误
-      - name: Download Raw File from Gitee
+      # 使用 Gitee API V5 的标准 Raw 接口，并加入 User-Agent 伪装成浏览器请求
+      # 这种方式是 Gitee 最认可的调用方式
+      - name: Download File via Gitee API v5
         run: |
-          curl -f -L -o copper_forex_daily.csv "https://gitee.com/peter817/copper_record/raw/master/copper_forex_daily.csv?access_token=${{ secrets.GITEE_TOKEN }}"
+          curl -X GET -f -L \
+            "https://gitee.com/api/v5/repos/peter817/copper_record/raw/copper_forex_daily.csv?access_token=${{ secrets.GITEE_TOKEN }}&ref=master" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            -o copper_forex_daily.csv
           
-          # 检查文件大小，如果小于 100 字节，可能是下载到了错误页面
-          FILE_SIZE=$(stat -c%s "copper_forex_daily.csv")
-          if [ "$FILE_SIZE" -gt 100 ]; then
-             echo "文件下载成功，大小: $FILE_SIZE 字节"
+          # 检查下载结果
+          if [ -s "copper_forex_daily.csv" ]; then
+             echo "文件同步成功，大小: $(stat -c%s copper_forex_daily.csv) 字节"
           else
-             echo "错误: 下载的文件太小，可能权限不足或 URL 错误。文件内容如下："
-             cat copper_forex_daily.csv
+             echo "错误: 下载结果为空，可能是 Token 过期或权限被拒绝。"
              exit 1
           fi
 
-      - name: Commit and Push to GitHub
+      - name: Commit and Push
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
@@ -39,8 +40,8 @@ jobs:
           git add copper_forex_daily.csv
           
           if git diff --staged --quiet; then
-            echo "没有内容更新"
+            echo "今日数据无变化，跳过提交"
           else
-            git commit -m "chore: 同步 Gitee 数据 (Real-time Sync)"
+            git commit -m "chore: 自动同步 Gitee 数据 (Success at $(date))"
             git push
           fi
