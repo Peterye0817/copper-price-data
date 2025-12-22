@@ -15,29 +15,32 @@ jobs:
       - name: Checkout GitHub Repo
         uses: actions/checkout@v4
 
-      # 使用 API 直接下载文件，比 git clone 更稳定，不会因为仓库太大或鉴权问题报 403
-      - name: Download File from Gitee
+      # 使用 Gitee 的 Raw 下载链接，直接把 Token 挂在参数后面
+      # 这种方式不走 API 节点，不容易被拦截，也不会有 JSON 解析错误
+      - name: Download Raw File from Gitee
         run: |
-          curl -H "Authorization: token ${{ secrets.GITEE_TOKEN }}" \
-               -L "https://gitee.com/api/v5/repos/peter817/copper_record/contents/copper_forex_daily.csv" \
-               | jq -r '.content' | base64 -d > copper_forex_daily.csv
+          curl -f -L -o copper_forex_daily.csv "https://gitee.com/peter817/copper_record/raw/master/copper_forex_daily.csv?access_token=${{ secrets.GITEE_TOKEN }}"
           
-          # 验证文件是否下载成功且有内容
-          if [ -s "copper_forex_daily.csv" ]; then
-             echo "文件下载成功"
+          # 检查文件大小，如果小于 100 字节，可能是下载到了错误页面
+          FILE_SIZE=$(stat -c%s "copper_forex_daily.csv")
+          if [ "$FILE_SIZE" -gt 100 ]; then
+             echo "文件下载成功，大小: $FILE_SIZE 字节"
           else
-             echo "错误: 下载的文件为空，请检查 Token 权限或文件路径"
+             echo "错误: 下载的文件太小，可能权限不足或 URL 错误。文件内容如下："
+             cat copper_forex_daily.csv
              exit 1
           fi
 
-      - name: Commit and Push
+      - name: Commit and Push to GitHub
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          
           git add copper_forex_daily.csv
+          
           if git diff --staged --quiet; then
-            echo "无变化"
+            echo "没有内容更新"
           else
-            git commit -m "chore: 自动同步 Gitee 数据"
+            git commit -m "chore: 同步 Gitee 数据 (Real-time Sync)"
             git push
           fi
