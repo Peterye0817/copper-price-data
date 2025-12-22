@@ -1,14 +1,54 @@
-name: Debug Gitee Sync
+name: Sync File from Gitee (SSH Mode)
+
+permissions:
+  contents: write
 
 on:
-  workflow_dispatch: # 手动点击运行进行测试
+  schedule:
+    - cron: '0 13 * * *'
+  workflow_dispatch:
 
 jobs:
-  debug_sync:
+  sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Get Error Detail
+      - name: Checkout GitHub Repo
+        uses: actions/checkout@v4
+
+      # 1. 启动 SSH 代理并加载你的私钥
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.GITEE_SSH_KEY }}
+
+      # 2. 将 Gitee 添加到信任列表，防止首次连接弹窗确认
+      - name: Scan Gitee SSH Key
         run: |
-          # 故意去掉 -f，捕获报错信息
-          curl -L -v "https://gitee.com/api/v5/repos/peter817/copper_record/raw/copper_forex_daily.csv?access_token=${{ secrets.GITEE_TOKEN }}&ref=master" > error_log.txt 2>&1 || true
-          cat error_log.txt
+          mkdir -p ~/.ssh
+          ssh-keyscan gitee.com >> ~/.ssh/known_hosts
+
+      # 3. 通过 SSH 协议克隆（不再受 HTTPS 防火墙拦截）
+      - name: Clone Gitee Repo via SSH
+        run: |
+          git clone --depth 1 git@gitee.com:peter817/copper_record.git gitee-temp
+
+      # 4. 复制文件并提交
+      - name: Copy and Push
+        run: |
+          if [ -f "gitee-temp/copper_forex_daily.csv" ]; then
+            cp gitee-temp/copper_forex_daily.csv ./
+            
+            git config --global user.name 'github-actions[bot]'
+            git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+            git add copper_forex_daily.csv
+            
+            if git diff --staged --quiet; then
+              echo "今日数据无更新"
+            else
+              git commit -m "chore: 自动通过 SSH 同步 Gitee 数据"
+              git push
+            fi
+          else
+            echo "错误：未能在 Gitee 仓库中找到 copper_forex_daily.csv"
+            exit 1
+          fi
