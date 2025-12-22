@@ -1,55 +1,43 @@
-# 工作流名称
 name: Sync File from Gitee
 
-# 授权工作流写入仓库内容的权限
 permissions:
   contents: write
 
-# 工作流触发条件
 on:
   schedule:
-    - cron: '0 13 * * *'  # 每天北京时间 21:00 运行 (13+8=21)
-  workflow_dispatch:      # 允许手动运行
+    - cron: '0 13 * * *'
+  workflow_dispatch:
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      # 1. 检出 GitHub 仓库
       - name: Checkout GitHub Repo
         uses: actions/checkout@v4
 
-      # 2. 克隆 Gitee 仓库 (使用 Token 鉴权避免 403)
-      # 这里使用了你的用户名 peter817 和刚才配置的 Secret
-      - name: Clone Gitee Repo
+      # 使用 API 直接下载文件，比 git clone 更稳定，不会因为仓库太大或鉴权问题报 403
+      - name: Download File from Gitee
         run: |
-          git clone https://peter817:${{ secrets.GITEE_TOKEN }}@gitee.com/peter817/copper_record.git gitee-temp
-        
-      # 3. 从 Gitee 复制所需文件
-      - name: Copy file from Gitee
-        run: |
-          # 确保文件存在再复制
-          if [ -f "gitee-temp/copper_forex_daily.csv" ]; then
-            cp gitee-temp/copper_forex_daily.csv ./
-            echo "文件复制成功"
+          curl -H "Authorization: token ${{ secrets.GITEE_TOKEN }}" \
+               -L "https://gitee.com/api/v5/repos/peter817/copper_record/contents/copper_forex_daily.csv" \
+               | jq -r '.content' | base64 -d > copper_forex_daily.csv
+          
+          # 验证文件是否下载成功且有内容
+          if [ -s "copper_forex_daily.csv" ]; then
+             echo "文件下载成功"
           else
-            echo "错误: Gitee 仓库中未找到目标文件"
-            exit 1
+             echo "错误: 下载的文件为空，请检查 Token 权限或文件路径"
+             exit 1
           fi
 
-      # 4. 提交并推送到 GitHub
-      - name: Commit and Push to GitHub
+      - name: Commit and Push
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          
           git add copper_forex_daily.csv
-          
-          # 检查是否有变动
           if git diff --staged --quiet; then
-            echo "文件内容没有变化，跳过提交。"
+            echo "无变化"
           else
-            echo "检测到变动，正在提交并推送..."
-            git commit -m "chore: 自动同步 Gitee 数据文件 (From peter817/copper_record)"
+            git commit -m "chore: 自动同步 Gitee 数据"
             git push
           fi
