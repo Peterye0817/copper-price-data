@@ -1,0 +1,47 @@
+name: Sync File from Gitee
+
+permissions:
+  contents: write
+
+on:
+  schedule:
+    - cron: '0 13 * * *'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 检出 GitHub 仓库
+      - name: Checkout GitHub Repo
+        uses: actions/checkout@v4
+        with:
+          # 这行让工作流有推送权限，很重要
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # 2. 使用令牌克隆 Gitee 仓库 (已修改！)
+      - name: Clone Gitee Repo
+        run: |
+          # 核心修改：使用带有令牌的URL进行克隆
+          # 请将 [你的Gitee用户名] 和 [用户名/仓库名] 替换成你自己的信息
+          git clone https://[你的Gitee用户名]:${{ secrets.GITEE_TOKEN }}@gitee.com/[用户名/仓库名].git gitee-temp
+
+      # 3. 从 Gitee 复制所需文件
+      - name: Copy file from Gitee
+        run: |
+          cp gitee-temp/copper_forex_daily.csv ./
+
+      # 4. 提交并推送到 GitHub
+      - name: Commit and Push to GitHub
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add copper_forex_daily.csv
+          
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            echo "Changes detected. Committing and pushing..."
+            git commit -m "chore: 自动同步 Gitee 文件"
+            git push
+          fi
